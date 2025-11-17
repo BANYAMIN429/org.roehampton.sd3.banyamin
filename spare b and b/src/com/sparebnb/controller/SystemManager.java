@@ -2,31 +2,39 @@ package com.sparebnb.controller;
 
 import com.sparebnb.model.Host;
 import com.sparebnb.model.Property;
+import com.sparebnb.model.Guest;
+import com.sparebnb.model.Booking;
+
+import java.time.LocalDate;
 import java.util.ArrayList;
 
 /**
  * Manages the core business logic and data for the SpareB&B system.
  * This class acts as the "Controller" in the MVC pattern.
- * It holds the main lists of all hosts and properties.
+ * It holds the main lists of all hosts, properties, guests, and bookings.
  */
 public class SystemManager {
 
+    // --- Member Variables (The system's "memory") ---
     private ArrayList<Host> hosts;
     private ArrayList<Property> properties;
+    private ArrayList<Guest> guests;
+    private ArrayList<Booking> bookings;
 
+    /**
+     * Constructor: Initializes all the lists.
+     */
     public SystemManager() {
         this.hosts = new ArrayList<>();
         this.properties = new ArrayList<>();
+        this.guests = new ArrayList<>();
+        this.bookings = new ArrayList<>();
     }
 
     // --- Host Methods ---
 
     /**
      * Creates a new Host and adds them to the system.
-     *
-     * @param name  The host's full name.
-     * @param email The host's contact email.
-     * @return A message confirming the host was added.
      */
     public String addHost(String name, String email) {
         String hostId = "H" + (hosts.size() + 1);
@@ -37,8 +45,6 @@ public class SystemManager {
 
     /**
      * Retrieves the list of all hosts in the system.
-     *
-     * @return An ArrayList containing all Host objects.
      */
     public ArrayList<Host> getAllHosts() {
         return this.hosts;
@@ -46,9 +52,6 @@ public class SystemManager {
 
     /**
      * Helper method to find a Host by their ID.
-     *
-     * @param hostId The ID to search for.
-     * @return The Host object if found, or null otherwise.
      */
     public Host findHostById(String hostId) {
         for (Host host : this.hosts) {
@@ -63,43 +66,174 @@ public class SystemManager {
 
     /**
      * Creates a new Property and adds it to the system, linking it to an owner.
-     *
-     * @param address       The property's address.
-     * @param description   A description of the property.
-     * @param pricePerNight The nightly rental price.
-     * @param ownerId       The ID of the host who owns this property.
-     * @return A message confirming the property was added or an error.
      */
     public String addProperty(String address, String description, double pricePerNight, String ownerId) {
-
-        // 1. Find the Host object using the ID
         Host propertyOwner = findHostById(ownerId);
-
         if (propertyOwner == null) {
             return "Error: Host with ID " + ownerId + " not found. Cannot add property.";
         }
 
-        // 2. Create the new Property ID
         String propertyId = "P" + (properties.size() + 1);
-
-        // 3. Create the Property object, passing the full Host object (THE FIX)
         Property newProperty = new Property(propertyId, address, description, pricePerNight, propertyOwner);
-
-        // 4. Add the property to the main list
         this.properties.add(newProperty);
-
-        // 5. (Good OOP) Also add the property to the Host's personal list
-        propertyOwner.addProperty(newProperty);
+        propertyOwner.addProperty(newProperty); // Link it to the host
 
         return "Property at " + address + " added successfully with ID: " + propertyId;
     }
 
     /**
      * Retrieves the list of all properties in the system.
-     *
-     * @return An ArrayList containing all Property objects.
      */
     public ArrayList<Property> getAllProperties() {
         return this.properties;
+    }
+
+    /**
+     * Helper method to find a Property by its ID.
+     * (This is needed for createBooking)
+     */
+    public Property findPropertyById(String propertyId) {
+        for (Property property : this.properties) {
+            if (property.getPropertyId().equals(propertyId)) {
+                return property;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * NEW (Advanced Feature): Searches properties by max price.
+     *
+     * @param maxPrice The maximum price per night.
+     * @return A *new* list containing only matching properties.
+     */
+    public ArrayList<Property> searchPropertiesByPrice(double maxPrice) {
+        ArrayList<Property> filteredProperties = new ArrayList<>();
+        for (Property property : this.properties) {
+            if (property.getPricePerNight() <= maxPrice) {
+                filteredProperties.add(property);
+            }
+        }
+        return filteredProperties;
+    }
+
+    // --- Guest Methods ---
+
+    /**
+     * Creates a new Guest and adds them to the system.
+     */
+    public String addGuest(String name, String email) {
+        String guestId = "G" + (guests.size() + 1);
+        Guest newGuest = new Guest(guestId, name, email);
+        this.guests.add(newGuest);
+        return "Guest " + name + " added successfully with ID: " + guestId;
+    }
+
+    /**
+     * Retrieves the list of all guests in the system.
+     */
+    public ArrayList<Guest> getAllGuests() {
+        return this.guests;
+    }
+
+    /**
+     * Helper method to find a Guest by their ID.
+     * (This is needed for createBooking)
+     */
+    public Guest findGuestById(String guestId) {
+        for (Guest guest : this.guests) {
+            if (guest.getGuestId().equals(guestId)) {
+                return guest; // Found it!
+            }
+        }
+        return null; // Not found
+    }
+
+    // --- Booking Methods ---
+
+    /**
+     * Retrieves the list of all bookings in the system.
+     */
+    public ArrayList<Booking> getAllBookings() {
+        return this.bookings;
+    }
+
+    /**
+     * NEW (Advanced Feature): Helper method to find a Booking by its ID.
+     *
+     * @param bookingId The ID of the booking to find.
+     * @return The Booking object if found, or null.
+     */
+    public Booking findBookingById(String bookingId) {
+        for (Booking booking : this.bookings) {
+            if (booking.getBookingId().equals(bookingId)) {
+                return booking;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks if a property is available for a given date range.
+     * This is the core business logic for bookings.
+     */
+    private boolean isPropertyAvailable(Property property, LocalDate newStart, LocalDate newEnd) {
+        for (Booking existingBooking : this.bookings) {
+            if (existingBooking.getProperty().equals(property)) {
+                boolean conflict = newStart.isBefore(existingBooking.getEndDate()) &&
+                        newEnd.isAfter(existingBooking.getStartDate());
+
+                if (conflict) {
+                    return false; // Found an overlap
+                }
+            }
+        }
+        return true; // No conflicts found
+    }
+
+    /**
+     * Creates a new Booking and adds it to the system.
+     */
+    public String createBooking(String guestId, String propertyId, LocalDate startDate, LocalDate endDate) {
+
+        Guest guest = findGuestById(guestId);
+        Property property = findPropertyById(propertyId);
+
+        if (guest == null) {
+            return "Error: Guest with ID " + guestId + " not found.";
+        }
+        if (property == null) {
+            return "Error: Property with ID " + propertyId + " not found.";
+        }
+        if (endDate.isBefore(startDate) || endDate.isEqual(startDate)) {
+            return "Error: End date must be at least one day after the start date.";
+        }
+
+        if (!isPropertyAvailable(property, startDate, endDate)) {
+            return "Error: Property is not available for those dates. Please try again.";
+        }
+
+        String bookingId = "B" + (bookings.size() + 1);
+        Booking newBooking = new Booking(bookingId, guest, property, startDate, endDate);
+        this.bookings.add(newBooking);
+
+        return "Booking successful! ID: " + bookingId + ". Total Price: $" + String.format("%.2f", newBooking.getTotalPrice());
+    }
+
+    /**
+     * NEW (Advanced Feature): Cancels (deletes) a booking from the system.
+     *
+     * @param bookingId The ID of the booking to cancel.
+     * @return A confirmation or error message.
+     */
+    public String cancelBooking(String bookingId) {
+        Booking bookingToCancel = findBookingById(bookingId);
+
+        if (bookingToCancel == null) {
+            return "Error: Booking with ID " + bookingId + " not found.";
+        }
+
+        this.bookings.remove(bookingToCancel);
+        return "Booking " + bookingId + " has been successfully cancelled.";
     }
 }
