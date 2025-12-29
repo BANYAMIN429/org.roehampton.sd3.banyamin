@@ -132,4 +132,4 @@ public class Main {
         double max = Double.parseDouble(scanner.nextLine());
         for (Property p : manager.searchPropertiesByPrice(max)) System.out.println(p);
     }
-}1
+}
