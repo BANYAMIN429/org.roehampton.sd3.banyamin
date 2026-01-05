@@ -1,6 +1,7 @@
 package com.sparebnb.gui;
 
 import com.sparebnb.controller.SystemManager;
+import com.sparebnb.model.Booking;
 import com.sparebnb.model.Guest;
 import com.sparebnb.model.Property;
 import javafx.geometry.Insets;
@@ -21,11 +22,17 @@ public class MainView {
 
     // 2. UI COMPONENTS
     private BorderPane layout;
-    private ListView<Property> propertyListView;
+    private ListView<Property> propertyListView; // List for browsing properties
     private TextArea detailsArea;
     private ComboBox<Guest> guestSelector;
     private TextField priceFilterField;
     private Label statusLabel;
+
+    // --- NEW VARIABLES ADDED HERE ---
+    private ListView<Booking> bookingListView; // List for "My Bookings" tab
+    private DatePicker checkInPicker;          // Date selection for start
+    private DatePicker checkOutPicker;         // Date selection for end
+    // --------------------------------
 
     public MainView() {
         // Load dummy data so the list isn't empty when you run it
@@ -50,9 +57,13 @@ public class MainView {
         topBar.getChildren().addAll(guestLabel, guestSelector);
         layout.setTop(topBar);
 
-        // --- LEFT: List & Filter ---
-        VBox leftMenu = new VBox(10);
-        leftMenu.setPadding(new Insets(0, 15, 0, 0));
+        // --- LEFT: TabPane (CHANGED) ---
+        // Replaced the simple VBox with a TabPane to hold "Browse" and "My Bookings"
+        TabPane leftTabs = new TabPane();
+
+        // TAB 1: Browse Properties (Original functionality)
+        VBox propertyTabContent = new VBox(10);
+        propertyTabContent.setPadding(new Insets(10, 0, 0, 0));
 
         Label filterLabel = new Label("Max Price Filter:");
         priceFilterField = new TextField();
@@ -69,8 +80,27 @@ public class MainView {
                 (obs, oldVal, newVal) -> showDetails(newVal)
         );
 
-        leftMenu.getChildren().addAll(filterLabel, priceFilterField, new Label("Properties:"), propertyListView);
-        layout.setLeft(leftMenu);
+        propertyTabContent.getChildren().addAll(filterLabel, priceFilterField, new Label("Properties:"), propertyListView);
+        Tab propTab = new Tab("Browse", propertyTabContent);
+        propTab.setClosable(false);
+
+        // TAB 2: My Bookings (NEW FEATURE - Cancel/Release items)
+        VBox bookingTabContent = new VBox(10);
+        bookingTabContent.setPadding(new Insets(10, 0, 0, 0));
+
+        bookingListView = new ListView<>();
+        refreshBookingList(); // Populate list initially
+
+        Button cancelBtn = new Button("Cancel Selected Booking");
+        cancelBtn.setOnAction(e -> cancelSelectedBooking());
+
+        bookingTabContent.getChildren().addAll(new Label("Active Bookings:"), bookingListView, cancelBtn);
+        Tab bookingTab = new Tab("My Bookings", bookingTabContent);
+        bookingTab.setClosable(false);
+
+        // Add tabs to the left pane
+        leftTabs.getTabs().addAll(propTab, bookingTab);
+        layout.setLeft(leftTabs);
 
         // --- CENTER: Details ---
         detailsArea = new TextArea();
@@ -78,15 +108,26 @@ public class MainView {
         detailsArea.setText("Select a property to view details...");
         layout.setCenter(detailsArea);
 
-        // --- BOTTOM: Buttons ---
+        // --- BOTTOM: Action Area & Dates (CHANGED) ---
         VBox bottomBar = new VBox(10);
         bottomBar.setPadding(new Insets(15, 0, 0, 0));
+
+        // 1. Create Date Pickers
+        checkInPicker = new DatePicker(LocalDate.now());
+        checkInPicker.setPromptText("Check-In");
+        checkOutPicker = new DatePicker(LocalDate.now().plusDays(1));
+        checkOutPicker.setPromptText("Check-Out");
+
+        // 2. Add them to a horizontal box
+        HBox dateBox = new HBox(10, new Label("From:"), checkInPicker, new Label("To:"), checkOutPicker);
+
         Button bookButton = new Button("Book Selected Property");
         statusLabel = new Label("Status: Ready");
 
+        // Use Lambda for event handling
         bookButton.setOnAction(e -> handleBooking());
 
-        bottomBar.getChildren().addAll(bookButton, statusLabel);
+        bottomBar.getChildren().addAll(dateBox, bookButton, statusLabel);
         layout.setBottom(bottomBar);
     }
 
@@ -97,16 +138,20 @@ public class MainView {
 
         if (priceText == null || priceText.isEmpty()) {
             propertyListView.getItems().setAll(allProps);
+            statusLabel.setText("Status: Ready");
         } else {
             try {
                 double maxPrice = Double.parseDouble(priceText);
-                // ADVANCED REQUIREMENT: Java Streams
+                // ADVANCED FEATURE: Java Streams
                 List<Property> filtered = allProps.stream()
                         .filter(p -> p.getPricePerNight() <= maxPrice)
                         .collect(Collectors.toList());
                 propertyListView.getItems().setAll(filtered);
+                statusLabel.setText("Status: Filter applied.");
             } catch (NumberFormatException e) {
-                // Ignore invalid input
+                // IMPROVED: Error feedback
+                statusLabel.setText("Status: Invalid price format. Please enter a number.");
+                propertyListView.getItems().setAll(allProps);
             }
         }
     }
@@ -127,17 +172,46 @@ public class MainView {
         Guest guest = guestSelector.getValue();
         Property prop = propertyListView.getSelectionModel().getSelectedItem();
 
+        // 1. Validate User and Property
         if (guest == null || prop == null) {
-            statusLabel.setText("Status: Please select a guest and property.");
+            statusLabel.setText("Status: Please select a guest and a property first.");
             return;
         }
 
-        // Simulating dates for the demo
-        LocalDate start = LocalDate.now().plusDays(1);
-        LocalDate end = LocalDate.now().plusDays(3);
+        // 2. Validate Dates (New Logic)
+        LocalDate start = checkInPicker.getValue();
+        LocalDate end = checkOutPicker.getValue();
 
+        if (start == null || end == null) {
+            statusLabel.setText("Status: Please select valid Check-In and Check-Out dates.");
+            return;
+        }
+
+        // 3. Create Booking
         String result = systemManager.createBooking(guest.getGuestId(), prop.getPropertyId(), start, end);
         statusLabel.setText("Status: " + result);
+
+        // 4. Update the My Bookings list immediately
+        refreshBookingList();
+    }
+
+    // NEW Helper: Updates the "My Bookings" list from the SystemManager
+    private void refreshBookingList() {
+        if (bookingListView != null) {
+            bookingListView.getItems().setAll(systemManager.getAllBookings());
+        }
+    }
+
+    // NEW Helper: Cancels a booking selected in the "My Bookings" tab
+    private void cancelSelectedBooking() {
+        Booking selected = bookingListView.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            String result = systemManager.cancelBooking(selected.getBookingId());
+            statusLabel.setText("Status: " + result);
+            refreshBookingList(); // Refresh list to remove the cancelled item
+        } else {
+            statusLabel.setText("Status: Select a booking from the list to cancel.");
+        }
     }
 
     private void seedData() {
